@@ -33,7 +33,7 @@ class TestInstrumentList(unittest.TestCase):
             return b""
         else:
             if not self.logOutSent:
-                return b"8=FIX.4.4\x019=227\x0135=y\x0149=SPOT\x0156=BMDWATCH\x0134=2\x0152=20250301-01:00:00.001000\x01320=GetInstrumentList\x01146=1\x0155=BNBUSDT\x0115=USDT\x01562=0.00100000\x011140=900000.00000000\x0125039=0.00100000\x0125040=0.00000001\x0125041=6629.33313692\x0125042=0.00000001\x01969=0.01000000\x0110=110\x01"
+                return b"8=FIX.4.4\x019=227\x0135=y\x0149=SPOT\x0156=BMDWATCH\x0134=2\x0152=20250301-01:00:00.001000\x01320=GetInstrumentList\x01146=1\x0155=BNBUSDT\x0115=USDT\x012551=0.01000000\x012552=100000.00000000\x01969=0.01000000\x01562=0.00100000\x011140=900000.00000000\x0125039=0.00100000\x0125040=0.00000001\x0125041=6629.33313692\x0125042=0.00000001\x01969=0.01000000\x0110=110\x01"
             else:
                 return b"8=FIX.4.4\x019=84\x0135=5\x0134=4\x0149=SPOT\x0152=20250301-01:00:00.002000\x0156=GhQHzrLR\x0158=Logout acknowledgment.\x0110=212\x01"
 
@@ -121,6 +121,21 @@ class TestInstrumentList(unittest.TestCase):
                         if not msg.get(15, i + 1)
                         else msg.get(15, i + 1).decode("utf-8")
                     )
+                    min_price = (
+                        None
+                        if not msg.get(2551, i + 1)
+                        else msg.get(2551, i + 1).decode("utf-8")
+                    )
+                    max_price = (
+                        None
+                        if not msg.get(2552, i + 1)
+                        else msg.get(2552, i + 1).decode("utf-8")
+                    )
+                    min_price_inc = (
+                        None
+                        if not msg.get(969, i + 1)
+                        else msg.get(969, i + 1).decode("utf-8")
+                    )
                     min_trade_vol = (
                         None
                         if not msg.get(562, i + 1)
@@ -159,6 +174,9 @@ class TestInstrumentList(unittest.TestCase):
 
                     self.assertEqual("BNBUSDT", symbol)
                     self.assertEqual("USDT", currency)
+                    self.assertEqual("0.01000000", min_price)
+                    self.assertEqual("100000.00000000", max_price)
+                    self.assertEqual("0.01000000", min_price_inc)
                     self.assertEqual("0.00100000", min_trade_vol)
                     self.assertEqual("900000.00000000", max_trade_vol)
                     self.assertEqual("0.00100000", min_qty)
