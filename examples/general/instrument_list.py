@@ -42,6 +42,22 @@ def show_rendered_instrument_list(client: BinanceFixConnector) -> None:
                     else msg.get(15, i + 1).decode("utf-8")
                 )
                 header = f"Symbol: {symbol}, Currency: {currency}"
+                min_price = (
+                    None
+                    if not msg.get(2551, i + 1)
+                    else msg.get(2551, i + 1).decode("utf-8")
+                )
+                max_price = (
+                    None
+                    if not msg.get(2552, i + 1)
+                    else msg.get(2552, i + 1).decode("utf-8")
+                )
+                min_price_inc = (
+                    None
+                    if not msg.get(969, i + 1)
+                    else msg.get(969, i + 1).decode("utf-8")
+                )
+                body1 = f"Min price: {min_price} | Max price: {max_price} | Min price inc: {min_price_inc}"
                 min_trade_vol = (
                     None
                     if not msg.get(562, i + 1)
@@ -57,12 +73,7 @@ def show_rendered_instrument_list(client: BinanceFixConnector) -> None:
                     if not msg.get(25039, i + 1)
                     else msg.get(25039, i + 1).decode("utf-8")
                 )
-                min_price_inc = (
-                    None
-                    if not msg.get(969, i + 1)
-                    else msg.get(969, i + 1).decode("utf-8")
-                )
-                body1 = f"Min trade vol: {min_trade_vol} | Max trade vol: {max_trade_vol} | Min Qty: {min_qty} | Min price inc: {min_price_inc}"
+                body2 = f"Min trade vol: {min_trade_vol} | Max trade vol: {max_trade_vol} | Min Qty: {min_qty}"
                 market_min_trade_vol = (
                     None
                     if not msg.get(25040, i + 1)
@@ -78,11 +89,12 @@ def show_rendered_instrument_list(client: BinanceFixConnector) -> None:
                     if not msg.get(25042, i + 1)
                     else msg.get(25042, i + 1).decode("utf-8")
                 )
-                body2 = f"Market Min trade vol: {market_min_trade_vol} | Market Max trade vol: {market_max_trade_vol} | Market Min Qty: {market_min_qty}"
+                body3 = f"Market Min trade vol: {market_min_trade_vol} | Market Max trade vol: {market_max_trade_vol} | Market Min Qty: {market_min_qty}"
 
                 client.logger.info(header)
                 client.logger.info(body1)
                 client.logger.info(body2)
+                client.logger.info(body3)
 
 
 client_md = create_market_data_session(
