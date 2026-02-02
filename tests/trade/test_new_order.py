@@ -152,7 +152,7 @@ class TestNewOrder(unittest.TestCase):
 
         # Consume until logout message
         messages = client_oe.retrieve_messages_until(
-            message_type="5", timeout_seconds=1
+            message_type=["5"], timeout_seconds=1
         )
 
         # Logout acknowledgment

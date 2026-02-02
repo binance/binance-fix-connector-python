@@ -1,46 +1,25 @@
 #!/usr/bin/env python3
 
 import time
-import os
-from pathlib import Path
 
 from binance_fix_connector.fix_connector import create_order_entry_session
 from binance_fix_connector.utils import get_api_key, get_private_key
+from constants import (
+    path,
+    FIX_OE_URL,
+    INSTRUMENT,
+    LIST_STATUS_TYPE,
+    LIST_ORD_STATUS,
+    LIST_ORD_TYPE,
+    ORD_REJECT_REASON,
+    ORD_TYPES,
+    ORD_STATUS,
+    SIDES,
+    TIME_IN_FORCE,
+)
 
 # Credentials
-path = config_path = os.path.join(Path(__file__).parent.resolve(), "..", "config.ini")
 API_KEY, PATH_TO_PRIVATE_KEY_PEM_FILE = get_api_key(path)
-
-# FIX URL
-FIX_OE_URL = "tcp+tls://fix-oe.testnet.binance.vision:9000"
-
-# Response types
-ORD_STATUS = {
-    "0": "NEW",
-    "1": "PARTIALLY_FILLED",
-    "2": "FILLED",
-    "4": "CANCELED",
-    "6": "PENDING_CANCEL",
-    "8": "REJECTED",
-    "A": "PENDING_NEW",
-    "C": "EXPIRED",
-}
-ORD_TYPES = {"1": "MARKET", "2": "LIMIT", "3": "STOP", "4": "STOP_LIMIT"}
-SIDES = {"1": "BUY", "2": "SELL"}
-TIME_IN_FORCE = {
-    "1": "GOOD_TILL_CANCEL",
-    "3": "IMMEDIATE_OR_CANCEL",
-    "4": "FILL_OR_KILL",
-}
-ORD_REJECT_REASON = {"99": "OTHER"}
-LIST_STATUS = {"2": "RESPONSE", "4": "EXEC_STARTED", "5": "ALL_DONE"}
-LIST_ORD_STATUS = {"3": "EXECUTING", "6": "ALL_DONE", "7": "REJECT"}
-LIST_ORD_TYPE = {"1": "ONE_CANCELS_THE_OTHER", "2": "ONE_TRIGGERS_THE_OTHER"}
-LIST_TRIG_TYPE = {"ACTIVATED": "1", "PARTIALLY_FILLED": "2", "FILLED": "3"}
-LIST_TRIG_ACTION = {"RELEASE": "1", "CANCEL": "2"}
-
-# Parameters
-INSTRUMENT = "BNBUSDT"
 
 client_oe = create_order_entry_session(
     api_key=API_KEY,
@@ -49,7 +28,7 @@ client_oe = create_order_entry_session(
 )
 
 
-client_oe.retrieve_messages_until(message_type="A")
+client_oe.retrieve_messages_until(message_type=["A"])
 client_oe.get_all_new_messages_received()
 
 example = "This example shows how to place a list order type OTO, where both legs are Order type LIMIT.\nCheck https://github.com/binance/binance-spot-api-docs/blob/master/fix-api.md#neworderliste for additional types."
@@ -84,7 +63,7 @@ msg.append_pair(1385, 2)  # OTO
 msg.append_pair(25014, f"{identifier}")
 client_oe.send_message(msg)
 
-responses = client_oe.retrieve_messages_until(message_type="N")
+responses = client_oe.retrieve_messages_until(message_type=["N"])
 resp = next(
     (x for x in responses if x.message_type.decode("utf-8") == "N"),
     None,
@@ -99,7 +78,7 @@ list_status_type = None if not resp.get(429) else resp.get(429).decode("utf-8")
 list_ord_status = None if not resp.get(431) else resp.get(431).decode("utf-8")
 cl_list_id = None if not resp.get(25014) else resp.get(25014).decode("utf-8")
 contingency = None if not resp.get(1385) else resp.get(1385).decode("utf-8")
-header = f"Symbol: {symbol} | List status: {LIST_STATUS.get(list_status_type,list_status_type)} | List order status: {LIST_ORD_STATUS.get(list_ord_status,list_ord_status)}"
+header = f"Symbol: {symbol} | List status: {LIST_STATUS_TYPE.get(list_status_type,list_status_type)} | List order status: {LIST_ORD_STATUS.get(list_ord_status,list_ord_status)}"
 header_2 = f"Client list id: {cl_list_id} | List type: {LIST_ORD_TYPE.get(contingency,contingency)} | "
 client_oe.logger.info(header)
 client_oe.logger.info(header_2)
@@ -123,8 +102,8 @@ for i in range(orders):
 
 
 # +++++++++++++++++++++++++++
-responses = client_oe.retrieve_messages_until(message_type="8")
-responses.extend(client_oe.retrieve_messages_until(message_type="8"))
+responses = client_oe.retrieve_messages_until(message_type=["8"])
+responses.extend(client_oe.retrieve_messages_until(message_type=["8"]))
 resp = next(
     (
         x
@@ -216,7 +195,7 @@ client_oe.logger.info(f"Error code: {error_code} | Reason: {text}")
 # LOGOUT
 client_oe.logger.info("LOGOUT (5)")
 client_oe.logout()
-client_oe.retrieve_messages_until(message_type="5")
+client_oe.retrieve_messages_until(message_type=["5"])
 client_oe.logger.info(
     "Closing the connection with server as we already sent the logout message"
 )

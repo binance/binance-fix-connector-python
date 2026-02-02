@@ -19,50 +19,29 @@ pip install binance-fix-connector
 All the FIX messages can be created with the `BinanceFixConnector` class. The following example demonstrates how to create a simple order using the FIX API:
 ```python
 import time
-import os
-from pathlib import Path
 
 from binance_fix_connector.fix_connector import create_order_entry_session
 from binance_fix_connector.utils import get_api_key, get_private_key
+from constants import (
+    path,
+    FIX_OE_URL,
+    INSTRUMENT,
+    ORD_REJECT_REASON,
+    ORD_STATUS,
+    ORD_TYPES,
+    SIDES,
+    TIME_IN_FORCE,
+)
 
 # Credentials
-path = config_path = os.path.join(
-    Path(__file__).parent.resolve(), "..", "config.ini"
-)
 API_KEY, PATH_TO_PRIVATE_KEY_PEM_FILE = get_api_key(path)
-
-# FIX URL
-FIX_OE_URL = "tcp+tls://fix-oe.testnet.binance.vision:9000"
-
-# Response types
-ORD_STATUS = {
-    "0": "NEW",
-    "1": "PARTIALLY_FILLED",
-    "2": "FILLED",
-    "4": "CANCELED",
-    "6": "PENDING_CANCEL",
-    "8": "REJECTED",
-    "A": "PENDING_NEW",
-    "C": "EXPIRED",
-}
-ORD_TYPES = {"1": "MARKET", "2": "LIMIT", "3": "STOP", "4": "STOP_LIMIT"}
-SIDES = {"1": "BUY", "2": "SELL"}
-TIME_IN_FORCE = {
-    "1": "GOOD_TILL_CANCEL",
-    "3": "IMMEDIATE_OR_CANCEL",
-    "4": "FILL_OR_KILL",
-}
-ORD_REJECT_REASON = {"99": "OTHER"}
-
-# Parameter
-INSTRUMENT = "BNBUSDT"
 
 client_oe = create_order_entry_session(
     api_key=API_KEY,
     private_key=get_private_key(PATH_TO_PRIVATE_KEY_PEM_FILE),
     endpoint=FIX_OE_URL,
 )
-client_oe.retrieve_messages_until(message_type="A")
+client_oe.retrieve_messages_until(message_type=["A"])
 
 example = "This example shows how to place a single order. Order type LIMIT.\nCheck https://github.com/binance/binance-spot-api-docs/blob/master/fix-api.md#newordersingled for additional types."
 client_oe.logger.info(example)
@@ -79,7 +58,7 @@ msg.append_pair(59, 1)  # TIME IN FORCE
 client_oe.send_message(msg)
 
 
-responses = client_oe.retrieve_messages_until(message_type="8")
+responses = client_oe.retrieve_messages_until(message_type=["8"])
 resp = next(
     (x for x in responses if x.message_type.decode("utf-8") == "8"),
     None,
@@ -118,7 +97,7 @@ client_oe.logger.info(f"Error code: {error_code} | Reason: {text}")
 # LOGOUT
 client_oe.logger.info("LOGOUT (5)")
 client_oe.logout()
-client_oe.retrieve_messages_until(message_type="5")
+client_oe.retrieve_messages_until(message_type=["5"])
 client_oe.logger.info(
     "Closing the connection with server as we already sent the logout message"
 )
