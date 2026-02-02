@@ -38,6 +38,7 @@ class FixMsgTypes:
     LOGOUT = "5"
     LOGON = "A"
     REJECT = "3"
+    NEWS = "B"
 
 
 class FixTags:
@@ -64,7 +65,7 @@ class FixTags:
     RESPONSE_MODE = "25036"
 
 
-def __create_session(
+def _create_session(
     api_key: str,
     private_key: ed25519.Ed25519PrivateKey,
     endpoint: str,
@@ -118,7 +119,7 @@ def create_market_data_session(
     Message handling:   1->UNORDERED
                         2->SEQUENTIAL
     """
-    return __create_session(
+    return _create_session(
         endpoint=endpoint,
         api_key=api_key,
         private_key=private_key,
@@ -154,7 +155,7 @@ def create_order_entry_session(
     Message handling:   1->UNORDERED
                         2->SEQUENTIAL
     """
-    return __create_session(
+    return _create_session(
         endpoint=endpoint,
         api_key=api_key,
         private_key=private_key,
@@ -192,7 +193,7 @@ def create_drop_copy_session(
     Message handling:   1->UNORDERED
                         2->SEQUENTIAL
     """
-    return __create_session(
+    return _create_session(
         endpoint=endpoint,
         api_key=api_key,
         private_key=private_key,
@@ -227,6 +228,7 @@ class BinanceFixConnector:
         message_handling: int = 2,
         response_mode: int = 1,
         drop_copy_flag: bool = False,
+        restart: bool = True,
     ) -> None:
         """
         Create a fix session.
@@ -248,6 +250,7 @@ class BinanceFixConnector:
             message_handling (int, optional): The message handling. Defaults to 2 (SEQUENTIAL).
             response_mode (int, optional): The response mode. Defaults to 1 (EVERYTHING).
             drop_copy_flag (bool, optional): The drop copy flag. Defaults to False.
+            restart (bool, optional): Whether to enable automatic session restart upon server notification. Defaults to True.
 
 
         Raises:
@@ -300,6 +303,12 @@ class BinanceFixConnector:
         self.msg_seq_num: int = 1
         self.queue_msg_received: Queue[FixMessage] = Queue()
         self.messages_sent: list[FixMessage] = []
+
+        self.restart: bool = restart
+        self.restart_flag: bool = False
+        self.restart_session = None
+        self.restart_timer = None
+        self.restart_time = None
 
         logging.basicConfig(
             level=logging.INFO,
@@ -383,7 +392,11 @@ class BinanceFixConnector:
         raw_messages = [f"8={x}" for x in msg.split(f"{_SOH_}8=") if x]
         messages: list[FixMessage] = []
         for i in range(len(raw_messages)):
-            tag_values = [x for x in raw_messages[i].split(_SOH_) if x != ""]
+            tag_values = [
+                x
+                for x in raw_messages[i].split(_SOH_)
+                if "=" in x and not x.startswith("=")
+            ]
             if (
                 len(tag_values) > 1
                 and tag_values[0] == "8="
@@ -445,7 +458,16 @@ class BinanceFixConnector:
                 if messages:
                     self.__data = b""
                     for msg in messages:
-                        clean_message = msg.encode().decode("utf-8").replace(_SOH_, "|")
+                        try:
+                            clean_message = (
+                                msg.encode().decode("utf-8").replace(_SOH_, "|")
+                            )
+                        except ValueError:
+                            self.logger.warning(
+                                "Message decoded but could not be logged (missing MsgType: 35)"
+                            )
+                            continue
+
                         self.logger.info(
                             "%sServer=>Client: %s%s", GREEN, clean_message, RESET
                         )
@@ -492,6 +514,20 @@ class BinanceFixConnector:
                     "Sending a heartbeat message as we received a TestRequest message from server"
                 )
                 self.heartbeat(test_req_resp_id)
+            if msg_type == FixMsgTypes.NEWS:
+                self.logger.info("News message received from server.")
+                news_text = (
+                    None if not message.get(148) else message.get(148).decode("utf-8")
+                )
+                self.logger.info("NewsText: %s", news_text)
+                if self.restart:
+                    self.schedule_restart()
+            if msg_type == FixMsgTypes.LOGOUT and self.restart is False:
+                self.logger.info(
+                    "Logout message received from server. Closing connection."
+                )
+                self.logout()
+                self.disconnect()
 
     def get_all_new_messages_received(self) -> list[FixMessage]:
         """
@@ -511,18 +547,27 @@ class BinanceFixConnector:
 
     def retrieve_messages_until(
         self,
-        message_type: str,
+        message_type: str | list[str],
+        message_cl_ord_id: str | None = None,
         timeout_seconds: int = 3,
     ) -> list[FixMessage]:
         """Return all the FIX messages received from the server until message of desired type is received."""
         # with self.lock:
+        if isinstance(message_type, str):
+            message_type = [message_type]
         messages: list[FixMessage] = []
         timeout = datetime.now() + timedelta(seconds=timeout_seconds)
         while datetime.now() < timeout:
             for _ in range(self.queue_msg_received.qsize()):
                 msg = self.queue_msg_received.get()
                 messages.append(msg)
-                if message_type and msg.get("35").decode("utf-8") == message_type:
+                if message_cl_ord_id:
+                    cl_ord_id = (
+                        None if not msg.get("11") else msg.get("11").decode("utf-8")
+                    )
+                    if cl_ord_id == message_cl_ord_id:
+                        return messages
+                elif message_type and msg.get("35").decode("utf-8") in message_type:
                     return messages
 
             time.sleep(0.001)
@@ -600,31 +645,40 @@ class BinanceFixConnector:
             recv_window (str | None, optional): The recv window. Defaults to None.
 
         """
-        self.msg_seq_num = 0
-        msg = self.create_fix_message_with_basic_header(FixMsgTypes.LOGON, recv_window)
-        signature = self.generate_signature(
-            self.sender_comp_id,
-            self.target_comp_id,
-            self.msg_seq_num,
-            msg.get(FixTags.SENDING_TIME).decode("utf-8"),
-        )
+        if self.restart_flag:
+            self.logger.info(
+                "The Server will soon restart. Can't start any new connections"
+            )
+        else:
+            self.msg_seq_num = 0
+            msg = self.create_fix_message_with_basic_header(
+                FixMsgTypes.LOGON, recv_window
+            )
+            signature = self.generate_signature(
+                self.sender_comp_id,
+                self.target_comp_id,
+                self.msg_seq_num,
+                msg.get(FixTags.SENDING_TIME).decode("utf-8"),
+            )
 
-        msg.append_pair(FixTags.ENCRYPT_METHOD, self.encrypt_method, header=False)
-        msg.append_pair(FixTags.HEART_BT_INT, self.heart_bt_int, header=False)
-        msg.append_data(
-            FixTags.RAW_DATA_LENGTH, FixTags.RAW_DATA, signature, header=False
-        )
+            msg.append_pair(FixTags.ENCRYPT_METHOD, self.encrypt_method, header=False)
+            msg.append_pair(FixTags.HEART_BT_INT, self.heart_bt_int, header=False)
+            msg.append_data(
+                FixTags.RAW_DATA_LENGTH, FixTags.RAW_DATA, signature, header=False
+            )
 
-        msg.append_pair(
-            FixTags.RESET_SEQ_NUM_FLAG, self.reset_seq_num_flag, header=False
-        )
+            msg.append_pair(
+                FixTags.RESET_SEQ_NUM_FLAG, self.reset_seq_num_flag, header=False
+            )
 
-        msg.append_pair(FixTags.USERNAME, self.api_key, header=False)
-        msg.append_pair(FixTags.MESSAGE_HANDLING, self.message_handling, header=False)
-        msg.append_pair(FixTags.RESPONSE_MODE, self.response_mode, header=False)
-        msg.append_pair(FixTags.DROP_COPY_FLAG, self.drop_copy_flag, header=False)
+            msg.append_pair(FixTags.USERNAME, self.api_key, header=False)
+            msg.append_pair(
+                FixTags.MESSAGE_HANDLING, self.message_handling, header=False
+            )
+            msg.append_pair(FixTags.RESPONSE_MODE, self.response_mode, header=False)
+            msg.append_pair(FixTags.DROP_COPY_FLAG, self.drop_copy_flag, header=False)
 
-        self.send_message(msg)
+            self.send_message(msg)
 
     def logout(self, text: str | None = None, recv_window: str | None = None) -> None:
         """
@@ -686,3 +740,75 @@ class BinanceFixConnector:
             with contextlib.suppress(OSError):
                 self.sock.shutdown(socket.SHUT_RDWR)
             self.sock.close()
+
+    def schedule_restart(self) -> None:
+        """Schedule the session restart in 10 minutes."""
+        if not self.restart_flag:
+            self.restart_flag = True
+            self.restart_time = datetime.now() + timedelta(minutes=10)
+            self.logger.info(f"Session restart scheduled for {self.restart_time}")
+
+            self.restart_session = _create_session(
+                api_key=self.api_key,
+                private_key=self.private_key,
+                endpoint=self.endpoint,
+                sender_comp_id=self.sender_comp_id,
+                target_comp_id=self.target_comp_id,
+                fix_version=self.fix_version,
+                socket_buffer_size=self.socket_buffer_size,
+                heart_bt_int=self.heart_bt_int,
+                reset_seq_num_flag=self.reset_seq_num_flag,
+                encrypt_method=self.encrypt_method,
+                message_handling=self.message_handling,
+                response_mode=self.response_mode,
+                drop_copy_flag=self.drop_copy_flag,
+            )
+
+            if self.restart_timer is None or not self.restart_timer.is_alive():
+                self.restart_timer = threading.Thread(
+                    target=self._restart_timer_thread, daemon=True
+                )
+                self.restart_timer.start()
+
+    def _restart_timer_thread(self) -> None:
+        """Thread that waits until restart time and then performs the restart."""
+        while self.restart_flag and datetime.now() < self.restart_time:
+            time.sleep(1)
+
+        if self.restart_flag:
+            self.logger.info("Performing scheduled restart...")
+            self.reconnect()
+
+    def reconnect(self) -> None:
+        """Perform the actual reconnection to the new session."""
+        if not self.restart_flag or not self.restart_session:
+            self.logger.warning("No restart scheduled or restart session not created")
+            return
+
+        try:
+            self.logger.info("Disconnecting current session...")
+            self.disconnect()
+
+            time.sleep(1)
+
+            self.logger.info("Connecting to new session...")
+            self.restart_session.connect()
+            self.sock = self.restart_session.sock
+            self.ssl_sock = self.restart_session.ssl_sock
+            self.receive_thread = self.restart_session.receive_thread
+            self.is_connected = self.restart_session.is_connected
+            self.msg_seq_num = self.restart_session.msg_seq_num
+            self.queue_msg_received = self.restart_session.queue_msg_received
+            self.messages_sent = self.restart_session.messages_sent
+
+            self.__dict__.update(self.restart_session.__dict__)
+
+            self.logger.info("Restart completed successfully")
+            self.restart_flag = False
+            self.restart_time = None
+
+        except Exception as e:
+            self.logger.exception("Error during restart")
+            self.restart_flag = False
+            self.restart_time = None
+            raise

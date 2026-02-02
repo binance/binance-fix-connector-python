@@ -27,7 +27,7 @@ ORD_STATUS = {
     "A": "PENDING_NEW",
     "C": "EXPIRED",
 }
-ORD_TYPES = {"1": "MARKET", "2": "LIMIT", "3": "STOP", "4": "STOP_LIMIT"}
+ORD_TYPES = {"1": "MARKET", "2": "LIMIT", "3": "STOP", "4": "STOP_LIMIT", "P": "PEGGED"}
 SIDES = {"1": "BUY", "2": "SELL"}
 TIME_IN_FORCE = {
     "1": "GOOD_TILL_CANCEL",
@@ -394,7 +394,7 @@ class TestInstrumentList(unittest.TestCase):
 
         # Consume until logout message
         messages = client_oe.retrieve_messages_until(
-            message_type="5", timeout_seconds=1
+            message_type=["5"], timeout_seconds=1
         )
 
         # Logout acknowledgment

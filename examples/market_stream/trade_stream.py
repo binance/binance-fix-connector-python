@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 import time
-import os
-from pathlib import Path
 from datetime import datetime, timedelta
 
 from binance_fix_connector.fix_connector import (
@@ -10,21 +8,18 @@ from binance_fix_connector.fix_connector import (
     create_market_data_session,
 )
 from binance_fix_connector.utils import get_api_key, get_private_key
+from constants import (
+    path,
+    ACTION,
+    AGGRESSOR_SIDE,
+    FIX_MD_URL,
+    INSTRUMENT,
+    UPDATE,
+    TIMEOUT_SECONDS,
+)
 
 # Credentials
-path = config_path = os.path.join(Path(__file__).parent.resolve(), "..", "config.ini")
 API_KEY, PATH_TO_PRIVATE_KEY_PEM_FILE = get_api_key(path)
-
-# FIX URL
-FIX_MD_URL = "tcp+tls://fix-md.testnet.binance.vision:9000"
-
-# Response types
-UPDATE = {"0": "BID", "1": "OFFER", "2": "TRADE"}
-AGGRESSOR_SIDE = {"1": "BUY", "2": "SELL"}
-
-# Parameters
-INSTRUMENT = "BNBUSDT"
-TIMEOUT_SECONDS = 20
 
 
 def show_rendered_market_trade_stream(client: BinanceFixConnector) -> None:
@@ -79,7 +74,7 @@ client_md = create_market_data_session(
     private_key=get_private_key(PATH_TO_PRIVATE_KEY_PEM_FILE),
     endpoint=FIX_MD_URL,
 )
-client_md.retrieve_messages_until(message_type="A")
+client_md.retrieve_messages_until(message_type=["A"])
 
 example = "This example shows how to subscribe to a trade stream.\nCheck https://github.com/binance/binance-spot-api-docs/blob/master/fix-api.md#tradestream for additional types."
 client_md.logger.info(example)
@@ -133,7 +128,7 @@ client_md.send_message(msg)
 # LOGOUT
 client_md.logger.info("LOGOUT (5)")
 client_md.logout()
-client_md.retrieve_messages_until(message_type="5")
+client_md.retrieve_messages_until(message_type=["5"])
 client_md.logger.info(
     "Closing the connection with server as we already sent the logout message"
 )

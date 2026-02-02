@@ -154,7 +154,7 @@ class TestCurrentMessagesLimitRate(unittest.TestCase):
         )
 
         # Consume until logout message
-        messages = client.retrieve_messages_until(message_type="5", timeout_seconds=1)
+        messages = client.retrieve_messages_until(message_type=["5"], timeout_seconds=1)
 
         # Logout acknowledgment
         log_out_message = messages[-1]

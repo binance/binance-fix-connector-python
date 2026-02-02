@@ -203,7 +203,7 @@ class TestInstrumentList(unittest.TestCase):
 
         # Consume until logout message
         messages = client_md.retrieve_messages_until(
-            message_type="5", timeout_seconds=1
+            message_type=["5"], timeout_seconds=1
         )
 
         # Logout acknowledgment
