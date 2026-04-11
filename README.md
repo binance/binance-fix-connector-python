@@ -1,5 +1,4 @@
 # Binance FIX API Connector in Python
-
 This is a simple Python library that provides access to Binance Financial Information eXchange (FIX) [SPOT messages](https://github.com/binance/binance-spot-api-docs/blob/master/fix-api.md#message-components) using the FIX protocol. 
 It allows you to perform key operations such as placing orders, canceling orders, and querying current limit usage.
 
